@@ -1,0 +1,4 @@
+project_id = "daily-data-logger"
+
+[functions.workspace-access]
+verify_jwt = true
