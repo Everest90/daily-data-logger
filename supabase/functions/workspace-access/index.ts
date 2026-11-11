@@ -12,6 +12,17 @@ const json = (body: unknown, status = 200) =>
     headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
 
+function defaultKeyFromEnv(name: string): string | undefined {
+  const rawKeys = Deno.env.get(name);
+  if (!rawKeys) return undefined;
+  const parsed: unknown = JSON.parse(rawKeys);
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error(`${name} must contain a JSON object of API keys.`);
+  }
+  const defaultKey = (parsed as Record<string, unknown>).default;
+  return typeof defaultKey === "string" && defaultKey ? defaultKey : undefined;
+}
+
 async function digestCode(code: string, pepper: string): Promise<string> {
   const key = await crypto.subtle.importKey(
     "raw",
@@ -29,8 +40,10 @@ Deno.serve(async (request) => {
   if (request.method !== "POST") return json({ error: "Method not allowed." }, 405);
 
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
-  const anonKey = Deno.env.get("SUPABASE_ANON_KEY");
-  const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  const anonKey = Deno.env.get("SUPABASE_ANON_KEY")?.trim() ||
+    defaultKeyFromEnv("SUPABASE_PUBLISHABLE_KEYS");
+  const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")?.trim() ||
+    defaultKeyFromEnv("SUPABASE_SECRET_KEYS");
   const pepper = Deno.env.get("WORKSPACE_CODE_PEPPER");
   if (!supabaseUrl || !anonKey || !serviceRoleKey || !pepper) {
     return json({ error: "Workspace access is not configured on the server." }, 500);

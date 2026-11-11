@@ -175,13 +175,19 @@ function isValidLabel(value: string): boolean {
   return Number.isInteger(numeric) && numeric >= 1 && numeric <= 10000;
 }
 
-function similarDepositors(records: LogRecord[], value: string): string[] {
+function similarDepositors(records: LogRecord[], value: string): LogRecord[] {
   const query = value.trim().toLocaleLowerCase();
   if (!query) return [];
-  return [...new Map(records
-    .map((record) => record.depositor.trim())
-    .filter((name) => name && name.toLocaleLowerCase().includes(query))
-    .map((name) => [name.toLocaleLowerCase(), name])).values()].slice(0, 6);
+  const newestFirst = [...records].sort((a, b) =>
+    b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt));
+  const seen = new Set<string>();
+  return newestFirst.filter((record) => {
+    const name = record.depositor.trim();
+    const normalized = name.toLocaleLowerCase();
+    if (!name || !normalized.includes(query) || seen.has(normalized)) return false;
+    seen.add(normalized);
+    return true;
+  }).slice(0, 6);
 }
 
 function isLabelReusable(records: LogRecord[], label: string, exceptRecordId?: string): boolean {
@@ -439,6 +445,27 @@ function App() {
 
   const updateItem = (index: number, patch: Partial<DraftItem>) => {
     setItems((current) => current.map((item, position) => position === index ? { ...item, ...patch } : item));
+  };
+
+  const loadQuickEntryFromRecord = (record: LogRecord) => {
+    setQuickDepositor(record.depositor);
+    setQuickLabel(record.label);
+    setQuickItems(record.items.map((item) => ({
+      id: crypto.randomUUID(),
+      type: item.type,
+      statement: item.statement,
+      detail: item.type === "Others" ? item.detail.replace(/^Other item: /, "") : "",
+    })));
+  };
+
+  const loadFullEntryFromRecord = (record: LogRecord) => {
+    setDepositor(record.depositor);
+    setLabel(record.label);
+    setItems(record.items.map((item) => ({
+      ...item,
+      id: crypto.randomUUID(),
+      detail: item.type === "Others" ? item.detail.replace(/^Other item: /, "") : item.detail,
+    })));
   };
 
   const resetForm = () => {
@@ -943,7 +970,7 @@ function App() {
                   </div>
                   {entryMode === "quick" ? <form onSubmit={saveQuickEntry}>
                     <div className="form-grid two-col">
-                      <div className="field-with-suggestions"><Field label="Depositor name" required><input value={quickDepositor} onChange={(event) => setQuickDepositor(event.target.value)} placeholder="e.g. Jamie Lee" required maxLength={100} autoComplete="off" /></Field><DepositorSuggestions records={records} value={quickDepositor} onChoose={setQuickDepositor} /></div>
+                      <div className="field-with-suggestions"><Field label="Depositor name" required><input value={quickDepositor} onChange={(event) => setQuickDepositor(event.target.value)} placeholder="e.g. Jamie Lee" required maxLength={100} autoComplete="off" /></Field><DepositorSuggestions records={records} value={quickDepositor} onChoose={loadQuickEntryFromRecord} /></div>
                       <Field label="Label (optional)"><input type="number" min={1} max={10000} step={1} value={quickLabel} onChange={(event) => setQuickLabel(event.target.value)} placeholder="1–10000" /></Field>
                     </div>
                     {quickLabel.trim() && blockedLabels.has(normalizeLabel(quickLabel)) && <p className="label-warning" role="status">This label has an entry with pending items and cannot be reused yet.</p>}
@@ -969,7 +996,7 @@ function App() {
                     </div>
                   </form> : <form onSubmit={saveEntry}>
                     <div className="form-grid two-col">
-                      <div className="field-with-suggestions"><Field label="Depositor name" required><input value={depositor} onChange={(event) => setDepositor(event.target.value)} placeholder="e.g. Jamie Lee" required maxLength={100} autoComplete="off" /></Field><DepositorSuggestions records={records} value={depositor} onChoose={setDepositor} /></div>
+                      <div className="field-with-suggestions"><Field label="Depositor name" required><input value={depositor} onChange={(event) => setDepositor(event.target.value)} placeholder="e.g. Jamie Lee" required maxLength={100} autoComplete="off" /></Field><DepositorSuggestions records={records} value={depositor} onChoose={loadFullEntryFromRecord} /></div>
                       <Field label="Label (optional)"><input type="number" min={1} max={10000} step={1} value={label} onChange={(event) => setLabel(event.target.value)} placeholder="1–10000" /></Field>
                     </div>
                     {label.trim() && blockedLabels.has(normalizeLabel(label)) && <p className="label-warning" role="status">This label has an entry with pending items and cannot be reused yet.</p>}
@@ -1094,13 +1121,13 @@ function ItemTypeCounts({ counts, className }: {
 function DepositorSuggestions({ records, value, onChoose }: {
   records: LogRecord[];
   value: string;
-  onChoose: (name: string) => void;
+  onChoose: (record: LogRecord) => void;
 }) {
   const suggestions = similarDepositors(records, value);
   if (!suggestions.length) return null;
   return <div className="depositor-suggestions" role="group" aria-label="Existing depositor suggestions">
-    <span>Existing names</span>
-    {suggestions.map((name) => <button key={name} type="button" className="suggestion-chip" onClick={() => onChoose(name)}>{name}</button>)}
+    <span>Existing names <small>Select a name to reuse its latest entry details.</small></span>
+    {suggestions.map((record) => <button key={record.id} type="button" className="suggestion-chip" onClick={() => onChoose(record)}>{record.depositor}</button>)}
   </div>;
 }
 
@@ -1117,6 +1144,16 @@ function InlineRecordEditor({ record, allRecords, onSave, onCancel }: {
 
   const updateItem = (itemId: string, patch: Partial<RecordItem>) => {
     setItems((current) => current.map((item) => item.id === itemId ? { ...item, ...patch } : item));
+  };
+
+  const loadExistingRecord = (source: LogRecord) => {
+    setDepositor(source.depositor);
+    setLabel(source.label);
+    setItems(source.items.map((item) => ({
+      ...item,
+      id: crypto.randomUUID(),
+      detail: item.type === "Others" ? item.detail.replace(/^Other item: /, "") : item.detail,
+    })));
   };
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
@@ -1140,7 +1177,7 @@ function InlineRecordEditor({ record, allRecords, onSave, onCancel }: {
 
   return <form className="inline-editor" onSubmit={(event) => void submit(event)}>
     <div className="form-grid two-col">
-    <div className="field-with-suggestions"><Field label="Depositor name" required><input value={depositor} onChange={(event) => setDepositor(event.target.value)} maxLength={100} required autoComplete="off" /></Field><DepositorSuggestions records={allRecords} value={depositor} onChoose={setDepositor} /></div>
+    <div className="field-with-suggestions"><Field label="Depositor name" required><input value={depositor} onChange={(event) => setDepositor(event.target.value)} maxLength={100} required autoComplete="off" /></Field><DepositorSuggestions records={allRecords} value={depositor} onChoose={loadExistingRecord} /></div>
       <Field label="Label (optional)"><input type="number" min={1} max={10000} step={1} value={label} onChange={(event) => setLabel(event.target.value)} placeholder="1–10000" /></Field>
     </div>
     <div className="items-heading"><h3>Items <span className="count-badge">{items.length}</span></h3></div>

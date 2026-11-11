@@ -2,7 +2,7 @@
 
 A responsive, offline-first React app for multi-item daily handoffs. Existing entry, search, filters, history, reminders, themes, and backup workflows remain in place. Records now use IndexedDB; optional team workspaces sync through Supabase.
 
-The Today view offers Quick entry and Full entry modes. Quick entry defaults to Powerbank / None and includes a custom item field when Others is selected. Daily overview and each history date show item counts by type. Depositor names are required; labels are optional whole numbers from 1 to 10000. A label remains unavailable for new entries while any earlier entry using it has pending items. Payment can be changed directly from record lists, completed entries show their completion time, and up to five entries can be pinned to the top of matching search results on this device. Notifications dismiss after five seconds. Check-in is no longer shown; older saved check-in values remain stored for compatibility. Existing entries can be edited directly in the Today or history record list.
+The Today view offers Quick entry and Full entry modes. Quick entry defaults to Powerbank / None and includes a custom item field when Others is selected. Daily overview and each history date show item counts by type. Selecting an existing depositor suggestion loads that depositor's latest entry details into the active form; item IDs are regenerated so the new entry stays independent. Quick entry reuses the visible label, type, statement, and custom item values while retaining its Not Yet payment default. Depositor names are required; labels are optional whole numbers from 1 to 10000. A label remains unavailable for new entries while any earlier entry using it has pending items. Payment can be changed directly from record lists, completed entries show their completion time, and up to five entries can be pinned to the top of matching search results on this device. Notifications dismiss after five seconds. Check-in is no longer shown; older saved check-in values remain stored for compatibility. Existing entries can be edited directly in the Today or history record list.
 
 ## Uploading the project to GitHub safely
 
@@ -62,16 +62,13 @@ Supabase is optional. The frontend is a static app; Supabase is only the databas
 
 ### 2. Configure and deploy the workspace access function
 
-The `workspace-access` Edge Function creates or joins a workspace and authorizes the current anonymous device. In **Edge Functions → Secrets**, set these server-side secrets:
+The `workspace-access` Edge Function creates or joins a workspace and authorizes the current anonymous device. Supabase supplies `SUPABASE_URL` automatically and newer projects provide API keys through the `SUPABASE_PUBLISHABLE_KEYS` and `SUPABASE_SECRET_KEYS` JSON environment variables. The function supports these current defaults and the legacy `SUPABASE_ANON_KEY` / `SUPABASE_SERVICE_ROLE_KEY` variables.
 
 | Secret | Value |
 | --- | --- |
-| `SUPABASE_URL` | This project's Supabase URL |
-| `SUPABASE_ANON_KEY` | This project's public anon key |
-| `SUPABASE_SERVICE_ROLE_KEY` | This project's service-role/secret key |
 | `WORKSPACE_CODE_PEPPER` | A private random string with at least 32 bytes of entropy |
 
-Generate a pepper locally (for example, `openssl rand -hex 32`). Keep it in the Supabase function secrets only; do not commit it, put it in `.env.local`, or expose it in the website host settings. The service-role key bypasses database row-level security, so it must also remain a server-side secret.
+Add the custom `WORKSPACE_CODE_PEPPER` secret in **Edge Functions → Secrets**. Supabase reserves the `SUPABASE_` prefix, so do not try to add the built-in variables as custom secrets. If the Dashboard does not allow saving the pepper, ask a project Owner or Administrator to add it. Generate a pepper locally (for example, `openssl rand -hex 32`). Keep it in Supabase function secrets only; do not commit it, put it in `.env.local`, or expose it in the website host settings. The function reads the service-role key from Supabase's server-side `SUPABASE_SECRET_KEYS`; this key bypasses row-level security and must never be exposed to the browser.
 
 Install the Supabase CLI if needed, then from this project directory run:
 
